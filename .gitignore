@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.local
+.next/
+android-app/app/build/
+android-app/.gradle/
+android-app/local.properties
+jdk17/
+
+*.zip
+web/public/*.apk
+
