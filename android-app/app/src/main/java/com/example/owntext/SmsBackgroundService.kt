@@ -20,6 +20,11 @@ import org.json.JSONObject
 import java.io.IOException
 
 class SmsBackgroundService : Service() {
+    companion object {
+        @Volatile
+        var isRunning = false
+    }
+
     private val CHANNEL_ID = "SmsGatewayServiceChannel"
     private var serviceJob: Job? = null
     private val client = OkHttpClient()
@@ -45,6 +50,7 @@ class SmsBackgroundService : Service() {
             .build()
 
         startForeground(1, notification)
+        isRunning = true
 
         serviceJob?.cancel()
         serviceJob = CoroutineScope(Dispatchers.IO).launch {
@@ -84,6 +90,8 @@ class SmsBackgroundService : Service() {
                         sendSms(id, to, body)
                     }
                 }
+            } else if (response.code == 401 || response.code == 403) {
+                refreshAccessToken()
             }
         }
     }
@@ -152,7 +160,11 @@ class SmsBackgroundService : Service() {
             .addHeader("Authorization", "Bearer $jwtToken")
             .build()
 
-        client.newCall(request).execute().close()
+        client.newCall(request).execute().use { response ->
+            if (response.code == 401 || response.code == 403) {
+                refreshAccessToken()
+            }
+        }
     }
 
     private fun updateDeviceStatus() {
@@ -177,12 +189,73 @@ class SmsBackgroundService : Service() {
             .addHeader("Authorization", "Bearer $jwtToken")
             .build()
 
-        client.newCall(request).execute().close()
+        client.newCall(request).execute().use { response -> 
+            if (response.code == 401 || response.code == 403) {
+                refreshAccessToken()
+            }
+        }
+    }
+
+    private fun refreshAccessToken(): Boolean {
+        val prefs = getSharedPreferences("OwnTextPrefs", Context.MODE_PRIVATE)
+        val refreshToken = prefs.getString("REFRESH_TOKEN", null) ?: return false
+
+        val json = JSONObject().apply {
+            put("refresh_token", refreshToken)
+        }.toString()
+
+        val body = json.toRequestBody("application/json; charset=utf-8".toMediaType())
+
+        val request = Request.Builder()
+            .url("$supabaseUrl/auth/v1/token?grant_type=refresh_token")
+            .post(body)
+            .addHeader("apikey", anonKey)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val respStr = response.body?.string()
+                if (response.isSuccessful && respStr != null) {
+                    val obj = JSONObject(respStr)
+                    val newToken = obj.getString("access_token")
+                    val newRefreshToken = obj.getString("refresh_token")
+                    
+                    prefs.edit()
+                        .putString("JWT", newToken)
+                        .putString("REFRESH_TOKEN", newRefreshToken)
+                        .apply()
+                    
+                    jwtToken = newToken
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("OwnText", "Failed to refresh token", e)
+        }
+        return false
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
         serviceJob?.cancel()
+        
+        // Mark device as offline when gateway stops
+        try {
+            if (jwtToken != null && deviceId != null) {
+                val json = org.json.JSONObject().apply {
+                    put("is_online", false)
+                }.toString()
+                val body = json.toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url("$supabaseUrl/rest/v1/devices?id=eq.$deviceId")
+                    .patch(body)
+                    .addHeader("apikey", anonKey)
+                    .addHeader("Authorization", "Bearer $jwtToken")
+                    .build()
+                Thread { try { client.newCall(request).execute().close() } catch (_: Exception) {} }.start()
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onBind(intent: Intent?): IBinder? {

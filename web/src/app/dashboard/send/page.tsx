@@ -22,24 +22,59 @@ export default function SendSMSPage() {
 
   useEffect(() => {
     fetchData();
+
+    // Subscribe to realtime updates for devices
+    const channel = supabase
+      .channel('public:devices:send')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  const isDeviceOnline = (device: any) => {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const lastSeenDate = new Date(device.last_seen_at || 0);
+    return device.is_online && lastSeenDate >= fiveMinutesAgo;
+  };
 
   const fetchData = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
     const [devicesRes, groupsRes] = await Promise.all([
-      supabase.from("devices").select("*").eq("user_id", session.user.id).order("device_name", { ascending: true }),
+      supabase.from("devices").select("*").eq("user_id", session.user.id).order("last_seen_at", { ascending: false }),
       supabase.from("groups").select("*").eq("user_id", session.user.id).order("name", { ascending: true })
     ]);
 
     if (devicesRes.data) {
-      setDevices(devicesRes.data);
-      if (devicesRes.data.length > 0) setSelectedDevice(devicesRes.data[0].id);
+      // Filter online only & deduplicate by device_name
+      const onlineDevices = devicesRes.data.filter(isDeviceOnline);
+      const map = new Map<string, any>();
+      for (const d of onlineDevices) {
+        const key = d.device_name || d.id;
+        if (!map.has(key)) {
+          map.set(key, d);
+        } else {
+          const existing = map.get(key)!;
+          const dSeen = new Date(d.last_seen_at || 0).getTime();
+          const exSeen = new Date(existing.last_seen_at || 0).getTime();
+          if (dSeen > exSeen) map.set(key, d);
+        }
+      }
+      const deduped = Array.from(map.values());
+      setDevices(deduped);
+      if (deduped.length > 0 && !deduped.find(d => d.id === selectedDevice)) {
+        setSelectedDevice(deduped[0].id);
+      }
     }
     if (groupsRes.data) {
       setGroups(groupsRes.data);
-      if (groupsRes.data.length > 0) setSelectedGroup(groupsRes.data[0].id);
+      if (groupsRes.data.length > 0 && !selectedGroup) setSelectedGroup(groupsRes.data[0].id);
     }
     
     setLoading(false);
@@ -177,8 +212,8 @@ export default function SendSMSPage() {
         {devices.length === 0 ? (
           <div className="text-center py-8">
             <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-            <h3 className="text-xl font-medium text-white mb-2">No Devices Available</h3>
-            <p className="text-zinc-400 mb-4">You need to connect an Android device before you can send messages.</p>
+            <h3 className="text-xl font-medium text-white mb-2">No Online Device</h3>
+            <p className="text-zinc-400 mb-4">Open the OwnText app on your phone and start the gateway to send messages.</p>
           </div>
         ) : (
           <form onSubmit={handleSend} className="space-y-6">

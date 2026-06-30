@@ -91,11 +91,12 @@ class MainActivity : ComponentActivity() {
         var email by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
         var isLoading by remember { mutableStateOf(false) }
-        var isServiceRunning by remember { mutableStateOf(false) }
+        var isServiceRunning by remember { mutableStateOf(SmsBackgroundService.isRunning) }
         var passwordVisible by remember { mutableStateOf(false) }
         
         val prefs = getSharedPreferences("OwnTextPrefs", Context.MODE_PRIVATE)
         var savedJwt by remember { mutableStateOf(prefs.getString("JWT", null)) }
+        var savedRefreshToken by remember { mutableStateOf(prefs.getString("REFRESH_TOKEN", null)) }
         var savedDeviceId by remember { mutableStateOf(prefs.getString("DEVICE_ID", null)) }
         
         // Stats
@@ -414,10 +415,11 @@ class MainActivity : ComponentActivity() {
                     if (response.isSuccessful && respStr != null) {
                         val obj = JSONObject(respStr)
                         val token = obj.getString("access_token")
+                        val refreshToken = obj.getString("refresh_token")
                         val user = obj.getJSONObject("user")
                         val userId = user.getString("id")
                         
-                        registerDevice(token, userId)
+                        registerDevice(token, refreshToken, userId)
                     } else {
                         val err = respStr ?: response.code.toString()
                         withContext(Dispatchers.Main) {
@@ -434,7 +436,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun registerDevice(token: String, userId: String) {
+    private suspend fun registerDevice(token: String, refreshToken: String, userId: String) {
         val prefs = getSharedPreferences("OwnTextPrefs", Context.MODE_PRIVATE)
         var dId = prefs.getString("DEVICE_ID", null)
         if (dId == null) {
@@ -463,6 +465,7 @@ class MainActivity : ComponentActivity() {
             if (response.isSuccessful) {
                 prefs.edit()
                     .putString("JWT", token)
+                    .putString("REFRESH_TOKEN", refreshToken)
                     .putString("DEVICE_ID", dId)
                     .apply()
                     

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { MessageSquare, CheckCircle2, Clock, AlertCircle, RefreshCw } from "lucide-react";
+import { MessageSquare, CheckCircle2, Clock, AlertCircle, RefreshCw, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function MessageLogsPage() {
@@ -37,6 +37,7 @@ export default function MessageLogsPage() {
       .from("messages")
       .select("*, devices(device_name)")
       .eq("user_id", session.user.id)
+      .neq("status", "delivered")
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -93,8 +94,9 @@ export default function MessageLogsPage() {
                 <tr className="border-b border-white/10 text-zinc-400 text-sm bg-white/[0.01]">
                   <th className="px-6 py-4 font-medium w-16">TYPE</th>
                   <th className="px-6 py-4 font-medium">STATUS</th>
-                  <th className="px-6 py-4 font-medium">TO/FROM</th>
-                  <th className="px-6 py-4 font-medium w-1/2">MESSAGE</th>
+                  <th className="px-6 py-4 font-medium">TO</th>
+                  <th className="px-6 py-4 font-medium">FROM</th>
+                  <th className="px-6 py-4 font-medium">MESSAGE</th>
                   <th className="px-6 py-4 font-medium">DEVICE</th>
                   <th className="px-6 py-4 font-medium text-right">TIME</th>
                 </tr>
@@ -108,13 +110,20 @@ export default function MessageLogsPage() {
                     className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
                   >
                     <td className="px-6 py-4">
-                      {getStatusIcon(msg.status)}
+                      {msg.direction === 'outbound' ? (
+                        <ArrowUpRight className="h-5 w-5 text-indigo-400" />
+                      ) : (
+                        <ArrowDownLeft className="h-5 w-5 text-emerald-400" />
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       {getStatusBadge(msg.status)}
                     </td>
                     <td className="px-6 py-4 text-white font-medium whitespace-nowrap">
-                      {msg.recipient}
+                      {msg.direction === 'outbound' ? msg.recipient : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-white font-medium whitespace-nowrap">
+                      {msg.direction === 'inbound' ? msg.recipient : '—'}
                     </td>
                     <td className="px-6 py-4 text-zinc-300 text-sm max-w-xs truncate" title={msg.message_body}>
                       {msg.message_body}
