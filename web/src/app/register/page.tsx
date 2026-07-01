@@ -42,6 +42,7 @@ export default function Register() {
       setSuccess(true);
       // Let them see the success message briefly before redirecting
       setTimeout(() => {
+        router.refresh();
         router.push("/dashboard");
       }, 2000);
     }

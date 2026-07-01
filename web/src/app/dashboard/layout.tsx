@@ -29,32 +29,53 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        router.push("/login");
-        return;
-      }
+    let mounted = true;
 
-      setUser(session.user);
-
-      // Check approval status and role
+    const loadProfile = async (userId: string) => {
       const { data: profile } = await supabase
         .from("profiles")
         .select("is_approved, role")
-        .eq("id", session.user.id)
+        .eq("id", userId)
         .single();
 
-      if (profile) {
+      if (mounted && profile) {
         setIsApproved(profile.is_approved);
         setIsAdmin(profile.role === 'admin');
+        setLoading(false);
+      } else if (mounted) {
+        setLoading(false);
       }
-      
-      setLoading(false);
     };
 
-    checkUser();
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (mounted && session) {
+        setUser(session.user);
+        loadProfile(session.user.id);
+      } else if (mounted) {
+        router.push("/login");
+      }
+    };
+    
+    checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        if (mounted) {
+          setUser(session.user);
+          loadProfile(session.user.id);
+        }
+      } else {
+        if (mounted) {
+          router.push("/login");
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [router]);
 
   const handleSignOut = async () => {

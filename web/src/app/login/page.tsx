@@ -38,6 +38,8 @@ export default function Login() {
       .eq("id", data.user.id)
       .single();
 
+    router.refresh();
+
     if (profile && !profile.is_approved) {
       // Allow them to see dashboard, but dashboard will show "Pending Approval" state
       router.push("/dashboard");
