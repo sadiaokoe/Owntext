@@ -131,7 +131,12 @@ class SmsBackgroundService : Service() {
                 }
             }
             
-            smsManager!!.sendTextMessage(to, null, body, null, null)
+            val parts = smsManager!!.divideMessage(body)
+            if (parts.size > 1) {
+                smsManager.sendMultipartTextMessage(to, null, parts, null, null)
+            } else {
+                smsManager.sendTextMessage(to, null, body, null, null)
+            }
             updateMessageStatus(id, "sent")
             
             val sentCount = prefs.getInt("STATS_SENT", 0)
